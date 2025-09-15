@@ -1,0 +1,16 @@
+# Ignore dataset files
+*.csv
+*.pkl
+*.xlsx
+*.json
+
+# Ignore cache and temp files
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.vscode/
+.idea/
+
+# Ignore Streamlit cache
+.streamlit/
