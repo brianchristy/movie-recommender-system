@@ -1,4 +1,3 @@
-import os
 import pickle
 import pandas as pd
 import streamlit as st
@@ -7,32 +6,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import quote_plus
 from io import BytesIO
-
-if not (os.path.exists("movie_dict.pkl") and os.path.exists("similarity.pkl")):
-    print("🔄 Building dataset from CSV...")
-
-    movies = pd.read_csv("tmdb_5000_movies.csv")
-    credits = pd.read_csv("tmdb_5000_credits.csv")
-
-    # Merge datasets
-    movies = movies.merge(credits, on='title')
-
-    # Feature engineering (you can customize)
-    movies['overview'] = movies['overview'].fillna('')
-    cv = CountVectorizer(max_features=5000, stop_words='english')
-    vectors = cv.fit_transform(movies['overview']).toarray()
-
-    # Compute similarity
-    similarity = cosine_similarity(vectors)
-
-    # Save pickle files
-    pickle.dump(movies.to_dict(), open("movie_dict.pkl", "wb"))
-    pickle.dump(similarity, open("similarity.pkl", "wb"))
-
-else:
-    print("✅ Loading existing pickle files")
-    movies = pd.DataFrame(pickle.load(open("movie_dict.pkl", "rb")))
-    similarity = pickle.load(open("similarity.pkl", "rb"))
 
 TMDB_KEY = "66774302c212b13b133cfef8e9206d83"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
