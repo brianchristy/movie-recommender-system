@@ -7,10 +7,6 @@ from urllib3.util.retry import Retry
 from urllib.parse import quote_plus
 from io import BytesIO
 
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-# Check if pickles already exist
 if not (os.path.exists("movie_dict.pkl") and os.path.exists("similarity.pkl")):
     print("🔄 Building dataset from CSV...")
 
