@@ -74,7 +74,9 @@ TMDB_KEY = "your_api_key_here"
 
 ## 🖼️ Demo
 
-> 🎥 *Screenshots / GIF of your app here*  
+<img width="1919" height="1017" alt="image" src="https://github.com/user-attachments/assets/56649579-9642-469c-8ebc-f71388f68fa9" />
+  
+<img width="1886" height="1001" alt="image" src="https://github.com/user-attachments/assets/dc7c0164-5af0-4122-b25a-0ed3f2964592" />
 
 ---
 
