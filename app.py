@@ -6,7 +6,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import quote_plus
 from io import BytesIO
+import os
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
+# =========================
+# TMDB API Settings
+# =========================
 TMDB_KEY = "66774302c212b13b133cfef8e9206d83"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
@@ -22,6 +28,10 @@ session.mount("https://", adapter)
 session.mount("http://", adapter)
 session.headers.update({"User-Agent": "movie-recommender/1.0"})
 
+
+# =========================
+# Poster Fetcher
+# =========================
 @st.cache_data(show_spinner=False)
 def fetch_poster_bytes(movie_id: int, title: str | None = None):
     try:
@@ -57,6 +67,54 @@ def fetch_poster_bytes(movie_id: int, title: str | None = None):
 
     return None
 
+
+# =========================
+# Data Loader (with fallback)
+# =========================
+CSV_MOVIES = "tmdb_5000_movies.csv"
+CSV_CREDITS = "tmdb_5000_credits.csv"
+PICKLE_MOVIES = "movie_dict.pkl"
+PICKLE_SIM = "similarity.pkl"
+
+
+@st.cache_resource(show_spinner="🔄 Preparing data... (first run may take a while)")
+def load_data():
+    if os.path.exists(PICKLE_MOVIES) and os.path.exists(PICKLE_SIM):
+        movies_dict = pickle.load(open(PICKLE_MOVIES, "rb"))
+        movies = pd.DataFrame(movies_dict)
+        similarity = pickle.load(open(PICKLE_SIM, "rb"))
+        return movies, similarity
+
+    st.warning("Pickle files not found — building dataset from CSVs. This may take 1-2 minutes.")
+
+    movies = pd.read_csv(CSV_MOVIES)
+    credits = pd.read_csv(CSV_CREDITS)
+
+    # Merge datasets
+    movies = movies.merge(credits, on="title")
+
+    # Use overview for content-based filtering
+    movies["overview"] = movies["overview"].fillna("")
+
+    cv = CountVectorizer(max_features=5000, stop_words="english")
+    vectors = cv.fit_transform(movies["overview"]).toarray()
+    similarity = cosine_similarity(vectors)
+
+    # Save pickles for faster reload
+    with open(PICKLE_MOVIES, "wb") as f:
+        pickle.dump(movies.to_dict(), f)
+    with open(PICKLE_SIM, "wb") as f:
+        pickle.dump(similarity, f)
+
+    return movies, similarity
+
+
+movies, similarity = load_data()
+
+
+# =========================
+# Recommendation Function
+# =========================
 def recommend(movie_title, n=10):
     idx = movies[movies['title'] == movie_title].index[0]
     distances = sorted(list(enumerate(similarity[idx])), reverse=True, key=lambda x: x[1])
@@ -64,7 +122,7 @@ def recommend(movie_title, n=10):
     for pair in distances[1:n+1]:
         i = pair[0]
         row = movies.iloc[i]
-        mid = row.get('movie_id')
+        mid = row.get('id') if "id" in row else row.get('movie_id')
         title = row.get('title')
         names.append(title)
         ids.append(mid)
@@ -77,6 +135,10 @@ def recommend(movie_title, n=10):
         poster_bytes_list.append(bytes_img)
     return names, poster_bytes_list, ids
 
+
+# =========================
+# Streamlit UI
+# =========================
 st.set_page_config(layout="wide")
 
 # Custom CSS
@@ -123,14 +185,6 @@ st.markdown(
 
 st.markdown("<h1 style='text-align: center; color: #ffcc00;'>🍿 Movie Recommender System</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Discover top movies you'll love, based on your favorites 🎬</p>", unsafe_allow_html=True)
-
-movies_dict = pickle.load(open("movie_dict.pkl", "rb"))
-movies = pd.DataFrame(movies_dict)
-similarity = pickle.load(open("similarity.pkl", "rb"))
-
-if 'movie_id' not in movies.columns:
-    st.error("movie_id column is missing from movie_dict.pkl.")
-    st.stop()
 
 movie_list = movies['title'].values
 selected_movie = st.selectbox("🎥 Choose a movie:", movie_list)
