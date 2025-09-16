@@ -6,16 +6,28 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import quote_plus
 from io import BytesIO
+import gdown
 import os
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
-# =========================
-# TMDB API Settings
-# =========================
+# -------------------------
+# CONFIG
+# -------------------------
 TMDB_KEY = "66774302c212b13b133cfef8e9206d83"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
+# Google Drive file IDs
+MOVIE_PICKLE = "movie_dict.pkl"
+SIM_PICKLE = "similarity.pkl"
+
+movie_pkl_id = "1sha1g0q5qGDhDXRBTKNZgjrTIa1ozsy2"
+sim_pkl_id = "1gX59vQ1k0QJLQ1dJUTGy5dpzajjGg0gW"
+
+movie_pkl_url = f"https://drive.google.com/uc?id={movie_pkl_id}"
+sim_pkl_url = f"https://drive.google.com/uc?id={sim_pkl_id}"
+
+# -------------------------
+# SESSION CONFIG
+# -------------------------
 session = requests.Session()
 retries = Retry(
     total=3,
@@ -29,11 +41,12 @@ session.mount("http://", adapter)
 session.headers.update({"User-Agent": "movie-recommender/1.0"})
 
 
-# =========================
-# Poster Fetcher
-# =========================
+# -------------------------
+# HELPER FUNCTIONS
+# -------------------------
 @st.cache_data(show_spinner=False)
 def fetch_poster_bytes(movie_id: int, title: str | None = None):
+    """Fetch movie poster bytes from TMDB by ID or fallback to search by title."""
     try:
         details_url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={TMDB_KEY}&language=en-US"
         r = session.get(details_url, timeout=10)
@@ -68,61 +81,15 @@ def fetch_poster_bytes(movie_id: int, title: str | None = None):
     return None
 
 
-# =========================
-# Data Loader (with fallback)
-# =========================
-CSV_MOVIES = "tmdb_5000_movies.csv"
-CSV_CREDITS = "tmdb_5000_credits.csv"
-PICKLE_MOVIES = "movie_dict.pkl"
-PICKLE_SIM = "similarity.pkl"
-
-
-@st.cache_resource(show_spinner="🔄 Preparing data... (first run may take a while)")
-def load_data():
-    if os.path.exists(PICKLE_MOVIES) and os.path.exists(PICKLE_SIM):
-        movies_dict = pickle.load(open(PICKLE_MOVIES, "rb"))
-        movies = pd.DataFrame(movies_dict)
-        similarity = pickle.load(open(PICKLE_SIM, "rb"))
-        return movies, similarity
-
-    st.warning("Pickle files not found — building dataset from CSVs. This may take 1-2 minutes.")
-
-    movies = pd.read_csv(CSV_MOVIES)
-    credits = pd.read_csv(CSV_CREDITS)
-
-    # Merge datasets
-    movies = movies.merge(credits, on="title")
-
-    # Use overview for content-based filtering
-    movies["overview"] = movies["overview"].fillna("")
-
-    cv = CountVectorizer(max_features=5000, stop_words="english")
-    vectors = cv.fit_transform(movies["overview"]).toarray()
-    similarity = cosine_similarity(vectors)
-
-    # Save pickles for faster reload
-    with open(PICKLE_MOVIES, "wb") as f:
-        pickle.dump(movies.to_dict(), f)
-    with open(PICKLE_SIM, "wb") as f:
-        pickle.dump(similarity, f)
-
-    return movies, similarity
-
-
-movies, similarity = load_data()
-
-
-# =========================
-# Recommendation Function
-# =========================
 def recommend(movie_title, n=10):
+    """Recommend N similar movies based on similarity matrix."""
     idx = movies[movies['title'] == movie_title].index[0]
     distances = sorted(list(enumerate(similarity[idx])), reverse=True, key=lambda x: x[1])
     names, poster_bytes_list, ids = [], [], []
     for pair in distances[1:n+1]:
         i = pair[0]
         row = movies.iloc[i]
-        mid = row.get('id') if "id" in row else row.get('movie_id')
+        mid = row.get('movie_id')
         title = row.get('title')
         names.append(title)
         ids.append(mid)
@@ -136,9 +103,16 @@ def recommend(movie_title, n=10):
     return names, poster_bytes_list, ids
 
 
-# =========================
-# Streamlit UI
-# =========================
+def download_if_missing(url, output):
+    """Download file from Google Drive if not present locally."""
+    if not os.path.exists(output):
+        with st.spinner(f"Downloading {output} from Google Drive..."):
+            gdown.download(url, output, quiet=False)
+
+
+# -------------------------
+# STREAMLIT UI
+# -------------------------
 st.set_page_config(layout="wide")
 
 # Custom CSS
@@ -186,6 +160,23 @@ st.markdown(
 st.markdown("<h1 style='text-align: center; color: #ffcc00;'>🍿 Movie Recommender System</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Discover top movies you'll love, based on your favorites 🎬</p>", unsafe_allow_html=True)
 
+# -------------------------
+# LOAD DATA
+# -------------------------
+download_if_missing(movie_pkl_url, MOVIE_PICKLE)
+download_if_missing(sim_pkl_url, SIM_PICKLE)
+
+movies_dict = pickle.load(open(MOVIE_PICKLE, "rb"))
+movies = pd.DataFrame(movies_dict)
+similarity = pickle.load(open(SIM_PICKLE, "rb"))
+
+if 'movie_id' not in movies.columns:
+    st.error("movie_id column is missing from movie_dict.pkl.")
+    st.stop()
+
+# -------------------------
+# MAIN UI
+# -------------------------
 movie_list = movies['title'].values
 selected_movie = st.selectbox("🎥 Choose a movie:", movie_list)
 
